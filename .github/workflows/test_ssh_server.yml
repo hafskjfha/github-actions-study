@@ -1,0 +1,51 @@
+name: Deploy to Lightsail
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # 1. 깃허브 액션 서버의 공인 IP 가져오기
+      - name: Get Public IP
+        id: ip
+        run: echo "ipv4=$(curl -s https://checkip.amazonaws.com)" >> $GITHUB_OUTPUT
+
+      # 2. AWS 자격 증명 설정
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2 # 본인의 리전 (서울은 ap-northeast-2)
+
+      # 3. Lightsail 방화벽에 SSH(22번) 포트 한시적 허용
+      - name: Open Lightsail Port 22
+        run: |
+          aws lightsail open-instance-public-ports \
+            --instance-name "my_web_server" \
+            --port-info fromPort=22,toPort=22,protocol=tcp,cidrs=${{ steps.ip.outputs.ipv4 }}/32
+
+      # 4. 실제 SSH 접속 및 배포 작업
+      - name: SSH Deploy
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.LIGHTSAIL_IP }}
+          username: ubuntu # 또는 bitnami 등
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          script: |
+            echo $HOME
+
+      # 5. 배포 완료 후 IP 제거 (실패해도 실행되도록 always() 사용)
+      - name: Close Lightsail Port 22
+        if: always()
+        run: |
+          aws lightsail close-instance-public-ports \
+            --instance-name "my_web_server" \
+            --port-info fromPort=22,toPort=22,protocol=tcp,cidrs=${{ steps.ip.outputs.ipv4 }}/32
