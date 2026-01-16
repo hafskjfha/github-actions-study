@@ -19,7 +19,28 @@ jobs:
           files: |
             apps/**
             packages/**
-      - name: Show tj-actions outputs
+      - name: Show changed folders
         run: |
-          echo "tj-actions outputs:" 
-          echo "${{ toJson(steps.changed.outputs) }}"
+          echo "Changed folders:"
+          python - <<'PY'
+            import os, json
+            s = os.environ.get('CHANGED_FILES','').strip()
+            files = []
+            try:
+              files = json.loads(s) if s else []
+              if isinstance(files, str):
+                files = [files]
+            except:
+              files = [ln for ln in s.replace('\r','\n').split('\n') if ln]
+            res = set()
+            for f in files:
+              parts = f.split('/')
+              if len(parts) >= 2:
+                res.add(parts[0] + '/' + parts[1])
+              elif parts:
+                res.add(parts[0])
+            for r in sorted(res):
+              print(r)
+            PY
+        env:
+          CHANGED_FILES: ${{ steps.changed.outputs.files }}
