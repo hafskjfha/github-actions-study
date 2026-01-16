@@ -33,6 +33,8 @@ jobs:
           echo "$changed_dirs"
           
           # 나중에 다른 스텝에서 쓸 수 있게 환경 변수나 출력값으로 저장할 수도 있습니다.
-          echo "CHANGED_DIRS<<EOF" >> $GITHUB_ENV
-          echo "$changed_dirs"
-          echo "EOF"
+          {
+            echo "CHANGED_DIRS<<EOF"
+            echo "$CHANGED_DIRS"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
