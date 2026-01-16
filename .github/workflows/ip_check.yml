@@ -1,0 +1,20 @@
+name:
+  IP Check Workflow
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+    ip_check:
+      runs-on: ubuntu-latest
+
+      steps:
+        - name: Get Public IP
+          id: ip
+          run: echo "ipv4=$(curl -s https://checkip.amazonaws.com)" >> $GITHUB_OUTPUT
+
+        - name: Display Public IP
+          run: echo "My public IP address is ${{ steps.ip.outputs.ipv4 }}"
