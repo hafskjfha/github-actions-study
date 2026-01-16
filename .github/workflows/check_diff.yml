@@ -12,6 +12,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: Get changed files (tj-actions/changed-files)
         uses: tj-actions/changed-files@v34
         id: changed
@@ -19,28 +20,19 @@ jobs:
           files: |
             apps/**
             packages/**
-      - name: Show changed folders
+
+      - name: List changed directories
+        if: steps.changed.outputs.any_changed == 'true'
         run: |
-          echo "Changed folders:"
-          python - <<'PY'
-          import os, json
-          s = os.environ.get('CHANGED_FILES','').strip()
-          files = []
-          try:
-            files = json.loads(s) if s else []
-            if isinstance(files, str):
-              files = [files]
-          except:
-            files = [ln for ln in s.replace('\r','\n').split('\n') if ln]
-          res = set()
-          for f in files:
-            parts = f.split('/')
-            if len(parts) >= 2:
-              res.add(parts[0] + '/' + parts[1])
-            elif parts:
-              res.add(parts[0])
-          for r in sorted(res):
-            print(r)
-          PY
-        env:
-          CHANGED_FILES: ${{ steps.changed.outputs.files }}
+          # 1. 변경된 모든 파일 목록을 가져옵니다.
+          # 2. 각 경로에서 두 번째 슬래시까지의 경로(ex: apps/a)만 잘라냅니다.
+          # 3. 중복을 제거합니다.
+          changed_dirs=$(echo "${{ steps.changed.outputs.all_changed_files }}" | tr ' ' '\n' | cut -d'/' -f1,2 | sort -u)
+          
+          echo "--- 변경된 앱/패키지 목록 ---"
+          echo "$changed_dirs"
+          
+          # 나중에 다른 스텝에서 쓸 수 있게 환경 변수나 출력값으로 저장할 수도 있습니다.
+          echo "CHANGED_DIRS<<EOF" >> $GITHUB_ENV
+          echo "$changed_dirs"
+          echo "EOF"
