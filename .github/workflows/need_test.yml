@@ -1,0 +1,29 @@
+name: needs-output-example
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    # job 레벨 output 정의
+    outputs:
+      build_message: ${{ steps.set_output.outputs.message }}
+
+    steps:
+      - name: Set output value
+        id: set_output
+        run: |
+          echo "message=빌드가 성공적으로 완료되었습니다" >> $GITHUB_OUTPUT
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Print value from build job
+        run: |
+          echo "build job에서 받은 값:"
+          echo "${{ needs.build.outputs.build_message }}"

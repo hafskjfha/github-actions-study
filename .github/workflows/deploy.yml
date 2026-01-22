@@ -1,0 +1,158 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # 변경 파일 감지
+      - name: Get changed files
+        uses: tj-actions/changed-files@v34
+        id: changed
+        with:
+          files: |
+            apps/**
+            packages/**
+
+      # 변경된 앱 플래그 계산
+      - name: Detect changed apps
+        id: detect
+        run: |
+          API_CHANGED=false
+          CRAWLER_CHANGED=false
+
+          for file in ${{ steps.changed.outputs.all_changed_files }}; do
+            if [[ "$file" == apps/api-server/* ]] || [[ "$file" == packages/* ]]; then
+              API_CHANGED=true
+            fi
+            if [[ "$file" == apps/crawler/* ]] || [[ "$file" == packages/* ]]; then
+              CRAWLER_CHANGED=true
+            fi
+          done
+
+          echo "API_CHANGED=$API_CHANGED" >> $GITHUB_ENV
+          echo "CRAWLER_CHANGED=$CRAWLER_CHANGED" >> $GITHUB_ENV
+
+          echo "API_CHANGED=$API_CHANGED"
+          echo "CRAWLER_CHANGED=$CRAWLER_CHANGED"
+
+      # 아무 것도 안 바뀌었으면 종료
+      - name: Skip if nothing changed
+        if: steps.changed.outputs.any_changed != 'true'
+        run: |
+          echo "No relevant changes. Skipping build."
+          exit 0
+
+      # =========================
+      # 1. 공통 builder 이미지
+      # =========================
+      - name: Build builder image
+        run: |
+          docker build \
+            -f docker/build/builder/Dockerfile \
+            -t myrepo-builder \
+            .
+
+      # =========================
+      # 2. api-server
+      # =========================
+      - name: Build api-server image
+        if: env.API_CHANGED == 'true'
+        run: |
+          docker build \
+            -f docker/build/api-server/Dockerfile \
+            -t jtw7913/kkuko-unofficial-api:server_deploy \
+            .
+
+      - name: Push api-server image
+        if: env.API_CHANGED == 'true'
+        run: |
+          docker push jtw7913/kkuko-unofficial-api:server_deploy
+
+      # =========================
+      # 3. crawler
+      # =========================
+      - name: Build crawler image
+        if: env.CRAWLER_CHANGED == 'true'
+        run: |
+          docker build \
+            -f docker/build/crawler/Dockerfile \
+            -t jtw7913/kkuko-unofficial-api:crawler \
+            .
+
+      - name: Push crawler image
+        if: env.CRAWLER_CHANGED == 'true'
+        run: |
+          docker push jtw7913/kkuko-unofficial-api:crawler
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get Public IP
+        id: ip
+        run: echo "ipv4=$(curl -s https://checkip.amazonaws.com)" >> $GITHUB_OUTPUT
+
+      # AWS 자격 증명 설정
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2
+
+      # Lightsail 방화벽에 SSH(22번) 포트 한시적 허용
+      - name: Open Lightsail Port 22
+        run: |
+          aws lightsail open-instance-public-ports \
+            --instance-name "my_web_server" \
+            --port-info fromPort=22,toPort=22,protocol=tcp,cidrs=${{ steps.ip.outputs.ipv4 }}/32
+
+      # 서버에 SSH 접속 및 배포 실행
+      - name: Trigger deploy on server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            set -e
+
+            echo "===== API SERVER DEPLOY ====="
+            cd /srv/api-server
+
+            docker pull jtw7913/kkuko-unofficial-api:server_deploy
+
+            /usr/local/bin/blue-green-deploy.sh
+
+            echo "===== CRAWLER DEPLOY ====="
+            cd /srv/crawler
+
+            docker pull jtw7913/kkuko-unofficial-api:crawler
+
+            docker compose down
+            docker compose up -d
+
+            echo "===== DEPLOY COMPLETE ====="
+      
+      # 배포 완료 후 IP 제거 (실패해도 실행되도록 always() 사용)
+      - name: Close Lightsail Port 22
+        if: always()
+        run: |
+          aws lightsail close-instance-public-ports \
+            --instance-name "my_web_server" \
+            --port-info fromPort=22,toPort=22,protocol=tcp,cidrs=${{ steps.ip.outputs.ipv4 }}/32

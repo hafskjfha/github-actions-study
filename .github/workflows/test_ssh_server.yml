@@ -1,8 +1,6 @@
 name: Deploy to Lightsail
 
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -34,7 +32,7 @@ jobs:
 
       # 4. 실제 SSH 접속 및 배포 작업
       - name: SSH Deploy
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.LIGHTSAIL_IP }}
           username: ubuntu # 또는 bitnami 등
